@@ -1,87 +1,117 @@
-# Cloud & GitOps Deployment Guide
+# Cloud Platform & GitOps Deployment Guide
 
-This document describes how to deploy the platform to AWS EKS using Terraform, build the Docker images, and sync the workloads via ArgoCD GitOps.
-
----
-
-## 1. Cloud Provisioning (Terraform)
-
-### Step 1: Initialize Terraform
-Navigate to the terraform directory and initialize providers (AWS, TLS, etc.):
-```bash
-cd terraform
-terraform init
-```
-
-### Step 2: Validate the Plan
-Create an execution plan to verify what AWS resources (VPC, subnets, node pools, S3 bucket, IAM roles) will be created:
-```bash
-terraform plan
-```
-
-### Step 3: Apply the Plan
-Apply the configurations to deploy resources to AWS:
-```bash
-terraform apply -auto-approve
-```
-*Note: This provisioning step takes approximately 10-15 minutes to spin up the VPC and EKS node groups.*
+This guide details the end-to-end instructions to deploy the AI Platform to AWS EKS and synchronize applications via ArgoCD.
 
 ---
 
-## 2. Docker Image Compilation
+## 1. Prerequisites & AWS Configuration
 
-Build and upload the Platform API & UI Portal image to Amazon Elastic Container Registry (ECR):
+Ensure you have configured your AWS CLI credentials:
+```bash
+aws configure
+# Enter AWS Access Key ID, Secret Access Key, Default Region (e.g., us-west-2), Output Format (json)
+```
 
-1.  **Retrieve ECR login credentials**:
+Verify your active identity:
+```bash
+aws sts get-caller-identity
+```
+
+---
+
+## 2. Infrastructure Deployment (Terraform)
+
+Provision the underlying AWS resources (VPC, IAM policies, Managed EKS node pools, S3 Model Registry):
+
+1.  **Navigate to the Terraform folder**:
+    ```bash
+    cd terraform
+    ```
+2.  **Initialize providers**:
+    ```bash
+    terraform init
+    ```
+3.  **Validate configurations**:
+    ```bash
+    terraform validate
+    ```
+4.  **Review the deployment plan**:
+    ```bash
+    terraform plan
+    ```
+5.  **Provision the resources**:
+    ```bash
+    terraform apply -auto-approve
+    ```
+    *This command takes 10 to 15 minutes to complete while EKS node groups are created in multiple availability zones.*
+
+---
+
+## 3. Configure Kubernetes Context (Kubeconfig)
+
+Configure your local shell environment to target the newly created EKS cluster:
+
+```bash
+aws eks update-kubeconfig --name ai-platform-cluster --region us-west-2
+```
+
+Verify cluster access:
+```bash
+kubectl get nodes
+```
+
+---
+
+## 4. Build and Push Container Images (ECR)
+
+Compile the FastAPI platform API and frontend UI, and upload the image to Amazon ECR:
+
+1.  **Retrieve ECR Registry URI**:
+    Retrieve the account ID to log in to AWS ECR:
     ```bash
     aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin <aws_account_id>.dkr.ecr.us-west-2.amazonaws.com
     ```
 2.  **Build the Docker image**:
-    Navigate to the root directory and run:
+    Build the platform image from the root directory:
     ```bash
     docker build -t ai-platform-api:latest -f fastapi-platform-api/Dockerfile fastapi-platform-api/
     ```
-3.  **Tag and Push to ECR**:
+3.  **Tag the image for ECR**:
     ```bash
     docker tag ai-platform-api:latest <aws_account_id>.dkr.ecr.us-west-2.amazonaws.com/ai-platform-api:latest
+    ```
+4.  **Push the image to ECR**:
+    ```bash
     docker push <aws_account_id>.dkr.ecr.us-west-2.amazonaws.com/ai-platform-api:latest
     ```
 
 ---
 
-## 3. GitOps Bootstrap (ArgoCD)
+## 5. Bootstrap ArgoCD (GitOps)
 
-Once EKS is up and your kubeconfig context is updated, you can bootstrap ArgoCD to deploy all services (MLflow, MinIO, KServe, etc.).
+Reconcile in-cluster deployments automatically based on the App-of-Apps repository pattern.
 
-### Step 1: Connect to EKS Cluster
-Update your local kubeconfig to point to your new EKS cluster:
-```bash
-aws eks update-kubeconfig --name ai-platform-cluster --region us-west-2
-```
+1.  **Deploy the ArgoCD controller namespaces**:
+    ```bash
+    kubectl create namespace argocd || true
+    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    ```
+2.  **Apply the Root App-of-Apps Manifest**:
+    Configure ArgoCD to track this repository:
+    ```bash
+    kubectl apply -f argocd/root-application.yaml
+    ```
+3.  **Access the ArgoCD Web Dashboard**:
+    Forward requests to access the Web Console locally:
+    ```bash
+    kubectl port-forward svc/argocd-server -n argocd 8080:443
+    # Navigate to: https://localhost:8080
+    ```
+4.  **Log in**:
+    -   *Username*: `admin`
+    -   *Password*: Retrieve using the command:
+        ```bash
+        kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+        ```
 
-### Step 2: Install ArgoCD
-Deploy the ArgoCD control controller inside the cluster:
-```bash
-kubectl create namespace argocd || true
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-```
-
-### Step 3: Apply the Root GitOps App
-Apply the root App-of-Apps manifest. ArgoCD will read [argocd/apps/](file:///d:/Ai%20infra%20&%20ai%20plateform/Kubernetes%20AI%20Infrastructure%20Platform/argocd/apps/) and deploy all modules automatically:
-```bash
-kubectl apply -f argocd/root-application.yaml
-```
-
-### Step 4: Verify Deployment Synced
-Check if all applications are in a synced and healthy state:
-```bash
-kubectl get applications -n argocd
-```
-You can port-forward to access the ArgoCD console locally:
-```bash
-kubectl port-forward svc/argocd-server -n argocd 8080:443
-```
-Now log in at `https://localhost:8080` using the username `admin` and retrieve the password with:
-```bash
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
-```
+All resources (MLflow, MinIO, KServe serving controllers, Observability monitoring agents, Keycloak databases, and the Platform API) are now automatically synced and deployed inside your EKS cluster!

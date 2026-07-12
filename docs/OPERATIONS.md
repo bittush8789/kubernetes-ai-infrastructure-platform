@@ -1,63 +1,70 @@
-# Platform Operations & MLOps Lifecycles
+# Platform Operations & Maintenance Guide
 
-This document outlines the operational pipelines, MLOps workflows, developer journeys, and professional resume descriptions for the platform.
+This document defines the checklists, procedures, and run intervals for platform maintenance, backups, and upgrades.
 
 ---
 
-## 1. CI/CD Pipeline Flow (DevOps)
+## 1. Operational Checklists
 
-The software deployment lifecycle is fully automated using GitHub Actions and ArgoCD GitOps:
+### Daily Checklists
+1.  **Monitor Cluster Resource Capacity**: Check Prometheus alerts for nodes running above 85% CPU or Memory limits.
+2.  **Verify Backup Logs**: Ensure the backup archive cron job executed successfully and pushed snapshots to backup locations.
+3.  **Inspect ArgoCD Sync Status**: Check for applications marked `OutOfSync` or `Degraded`.
+4.  **Audit Logs Review**: Scan Loki logs for high rates of 500 errors in backend API containers or KServe serving logs.
 
-```text
-  Developer Push          CI Pipeline (GitHub Actions)               GitOps Sync (ArgoCD)
-┌────────────────┐      ┌──────────────────────────────┐      ┌───────────────────────────────┐
-│ Commit Code    │ ───> │ 1. Run Python Linting/Tests   │ ───> │ 1. Monitor Git repository     │
-│ to Main Branch │      │ 2. Build Container Image     │      │ 2. Detect configuration drift │
-└────────────────┘      │ 3. Push Image to ECR         │      │ 3. Sync changes to EKS pods   │
-                        │ 4. Commit Tag to Helm/Deploy │      └───────────────────────────────┘
-                        └──────────────────────────────┘
+### Weekly Checklists
+1.  **Workspaces Quota Review**: Review CPU/RAM consumption per team workspace namespace. Reclaim unused allocated resources.
+2.  **Verify Model Registry Storage Limits**: Monitor AWS S3 / MinIO storage capacity. Archive or prune model version checkpoints that are no longer referenced in production.
+3.  **Certificate Expiry Auditing**: Confirm cert-manager successfully auto-renewed certificates due within 14 days.
+
+### Monthly Checklists
+1.  **IAM Auditing**: Revoke IAM permissions for offboarded engineers. Rotate secrets and access tokens.
+2.  **Kubernetes Patch Evaluation**: Check EKS managed node AMI releases. Review pending security patches.
+3.  **Simulated Disaster Recovery**: Perform a trial restore of the platform database from a backup file in a temporary namespace to verify data integrity.
+
+---
+
+## 2. Backup & Restore Processes
+
+### Backup Execution
+The platform utilizes an automated backup script. It can be triggered manually or via CronJob:
+```bash
+# Run backup script to dump PostgreSQL database and copy MinIO artifacts
+./scripts/backup.sh
 ```
+The output is saved as a compressed archive: `backups/YYYY-MM-DD-HHMMSS.tar.gz`.
 
-1.  **Code Commit**: Developers merge changes to the API server or frontend inside the `main` branch.
-2.  **Lint & Test**: GitHub Actions runs Python lints (`ruff`) and executes unit tests (`pytest`).
-3.  **Docker Build**: If validation passes, a new image is compiled and pushed to AWS ECR, tagged with the Git commit SHA.
-4.  **Manifest Update**: The workflow automatically modifies the target image tag in the deployment manifest.
-5.  **Reconciliation**: ArgoCD notices the tag change in Git and rolls out the update to the cluster via rolling updates.
-
----
-
-## 2. MLOps Model Lifecycle
-
-```text
-Data Prep ──> Model Training ──> MLflow Registry ──> Deployment (KServe) ──> Monitoring (Grafana)
-```
-
-1.  **Training**: Data scientists run experiment notebooks.
-2.  **Tracking**: Metrics, parameters, and loss curves are sent to MLflow.
-3.  **Registration**: High-performing models are promoted in the MLflow Model Registry (e.g. registered as version `v1` of `house-price-predictor`).
-4.  **Serving Deployment**: The Platform API triggers a KServe InferenceService pointing to the model S3 registry path.
-5.  **Telemetry**: Model throughput, data drift metrics, and response latencies are captured by Prometheus and displayed on Grafana.
+### Restore Procedure
+In the event of database corruption or data loss:
+1.  **Extract the backup archive**:
+    ```bash
+    tar -xzf backups/YYYY-MM-DD-HHMMSS.tar.gz -C /tmp/restore-platform/
+    ```
+2.  **Restore PostgreSQL database**:
+    Copy the SQL dump file to the database container and run it:
+    ```bash
+    kubectl cp /tmp/restore-platform/postgres_platform_db.sql ml-platform/postgres-deployment-<pod-id>:/tmp/db.sql
+    kubectl exec -n ml-platform postgres-deployment-<pod-id> -- psql -U postgres_user -d platform_db -f /tmp/db.sql
+    ```
+3.  **Restore SQLite fallback (for local development debugging)**:
+    ```bash
+    cp /tmp/restore-platform/ai_platform_sqlite.db fastapi-platform-api/ai_platform.db
+    ```
 
 ---
 
-## 3. Platform User Journey
+## 3. Platform Upgrade Process
 
-1.  **Upload & Register**: An engineer uploads model weights to the S3 bucket and registers the version in MLflow.
-2.  **Select Resources**: Using the AI Portal UI, they choose CPU cores, memory limits, and request a GPU if deploying an LLM.
-3.  **Deploy**: They submit the deployment. The FastAPI platform schedules Knative pods on EKS.
-4.  **Monitor**: They inspect the live metrics dashboard and read container logs.
-5.  **Scale**: The HPA automatically scales up instances during high traffic and scales down to zero when idle.
+When upgrading core system components (e.g. updating the FastAPI API server or Keycloak configurations):
 
----
-
-## 4. Professional Resume Bullet Highlights
-
-### AI Infrastructure Engineer
--   Designed and deployed a self-service AI platform serving 3 enterprise teams, cutting model deployment provisioning times from days to under 5 minutes.
--   Built a multi-tenant EKS Kubernetes platform utilizing NetworkPolicies, RBAC, and namespace isolation to guarantee secure resource segregation.
--   Configured AWS IAM Roles for Service Accounts (IRSA) via OIDC, eliminating static tokens and securing access to model registries.
-
-### MLOps / Platform Engineer
--   Orchestrated model serving lifecycle pipelines using KServe and Knative Serverless to serve PyTorch and LLM models, lowering cloud serving costs by 40% using scale-to-zero.
--   Integrated MLflow Tracking and MinIO S3 object storage to register and version machine learning models, creating a centralized registry.
--   Built time-series telemetry pipelines using Prometheus and Grafana dashboards to monitor model latencies (P99), QPS, and GPU allocations.
+1.  **Update Git Configurations**:
+    Commit the updated manifest files (e.g. updating container version hash inside [k8s-deployment.yaml](file:///d:/Ai%20infra%20&%20ai%20plateform/Kubernetes%20AI%20Infrastructure%20Platform/fastapi-platform-api/k8s-deployment.yaml)) to Git.
+2.  **Trigger ArgoCD Manual Sync** (if auto-sync is off):
+    ```bash
+    argocd app sync platform-api
+    ```
+3.  **Monitor Rolling Updates**:
+    Kubernetes rolls out pods one by one, verifying the new containers pass health checks before terminating old ones.
+    ```bash
+    kubectl rollout status deployment/platform-api-deployment -n ml-platform
+    ```

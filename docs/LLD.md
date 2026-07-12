@@ -1,205 +1,166 @@
 # Low-Level Design (LLD)
 
-This document details the low-level configurations, schemas, and specifications for the platform.
+This document details the low-level configurations, code schemas, database models, and manifest shapes for the platform.
 
 ---
 
-## 1. Repository Directory Structure
+## 1. Database Schema Design (PostgreSQL)
 
-```text
-kubernetes-ai-infrastructure-platform/
-├── .github/
-│   └── workflows/
-│       └── ci-cd.yaml             # GitHub Actions CI/CD Pipeline
-├── terraform/
-│   ├── main.tf                    # Root Terraform orchestration
-│   ├── variables.tf               # Terraform global variables
-│   ├── outputs.tf                 # Terraform output values
-│   └── modules/
-│       ├── vpc/
-│       │   └── main.tf            # VPC resources, subnets, route tables
-│       ├── eks/
-│       │   └── main.tf            # EKS Cluster, node groups, OIDC
-│       └── iam/
-│           └── main.tf            # EKS roles, node roles, IRSA S3 policy
-├── kubernetes/
-│   ├── namespaces/
-│   │   └── namespaces.yaml        # Isolated tenant namespaces
-│   ├── rbac/
-│   │   └── roles.yaml             # ML Engineer roles & Platform API SA bindings
-│   ├── ingress/
-│   │   └── nginx-ingress.yaml     # Hostname ingress mapping routing
-│   ├── hpa/
-│   │   └── hpa-template.yaml      # Horizontal Pod Autoscalers
-│   └── network-policies/
-│       └── team-isolation.yaml    # Tenant network namespace block policies
-├── argocd/
-│   ├── root-application.yaml      # ArgoCD App-of-Apps setup
-│   └── apps/
-│       ├── fastapi-platform-api.yaml
-│       ├── mlflow.yaml
-│       ├── minio.yaml
-│       ├── kserve.yaml
-│       ├── monitoring.yaml
-│       └── keycloak.yaml
-├── mlflow/
-│   ├── mlflow-deployment.yaml     # MLflow container, init-containers
-│   └── mlflow-service.yaml        # Service definition
-├── minio/
-│   └── minio-deployment.yaml      # StatefulSet, Service and PVC
-├── kserve/
-│   ├── kserve-config.yaml         # KServe cluster configs
-│   └── samples/
-│       ├── sentiment-analysis.yaml # PyTorch deployment
-│       ├── house-price.yaml        # Sklearn deployment
-│       └── llama3-vllm.yaml        # LLM GPU deployment
-├── monitoring/
-│   ├── prometheus/
-│   │   └── prometheus-values.yaml # Scrape configurations
-│   ├── grafana/
-│   │   ├── datasources.yaml       # Datasources setup
-│   │   └── dashboards/
-│   │       └── model-serving.json # JSON Dashboard configuration
-│   └── loki/
-│       └── loki-values.yaml       # Log aggregator & promtail pipelines
-├── keycloak/
-│   ├── keycloak-deployment.yaml   # Deployment & Service
-│   └── realm-config.json          # SSO Client configurations
-├── fastapi-platform-api/
-│   ├── app/
-│   │   ├── main.py                # REST endpoints
-│   │   ├── models.py              # DB Models schema
-│   │   ├── database.py            # Engine, session, SQLite fallback
-│   │   ├── k8s_client.py          # EKS client logic & KServe API bindings
-│   │   └── test_main.py           # Pytest test suite
-│   ├── static/
-│   │   └── index.html             # Glassmorphic Portal UI HTML/CSS/JS
-│   ├── requirements.txt
-│   └── Dockerfile
-├── scripts/
-│   ├── setup.sh                   # Dev environment setup
-│   ├── deploy.sh                  # Bootstrap Kubernetes & ArgoCD
-│   ├── destroy.sh                 # Tear down EKS & AWS infrastructure
-│   ├── backup.sh                  # Platform backup pipeline
-│   └── monitor.sh                 # Cluster health assessment
-└── README.md                      # General user guide
+The database persistence layer is implemented in SQLAlchemy. The schema definitions are structured as follows:
+
+```sql
+-- Workspaces Table
+CREATE TABLE workspaces (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    quota_cpu VARCHAR(50) DEFAULT '4',
+    quota_memory VARCHAR(50) DEFAULT '16Gi',
+    quota_gpu VARCHAR(50) DEFAULT '1',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_workspace_name ON workspaces(name);
+
+-- Models Table
+CREATE TABLE models (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    version VARCHAR(50) NOT NULL,
+    framework VARCHAR(100) NOT NULL,
+    artifact_uri VARCHAR(1024) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_model_name ON models(name);
+
+-- Deployments Table
+CREATE TABLE deployments (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE,
+    model_id INTEGER REFERENCES models(id) ON DELETE RESTRICT,
+    cpu VARCHAR(50) DEFAULT '1',
+    memory VARCHAR(50) DEFAULT '2Gi',
+    gpu VARCHAR(50) DEFAULT '0',
+    replicas INTEGER DEFAULT 1,
+    status VARCHAR(50) DEFAULT 'Deploying',
+    endpoint_url VARCHAR(1024),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_deployment_name ON deployments(name);
+
+-- Audit Logs Table
+CREATE TABLE audit_logs (
+    id SERIAL PRIMARY KEY,
+    "user" VARCHAR(255) NOT NULL,
+    action VARCHAR(255) NOT NULL,
+    details TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
 ---
 
-## 2. Database Schema Design (PostgreSQL)
+## 2. API Design & Payloads
 
-The platform metadata is managed via PostgreSQL. Here are the schemas and constraints:
-
-### Workspaces Table (`workspaces`)
-Represents namespaces assigned to teams (e.g. `team-a`).
-- `id` (INTEGER, Primary Key, Auto-increment)
-- `name` (VARCHAR, Unique, Indexed, Not Null) - matches Kubernetes namespace name.
-- `quota_cpu` (VARCHAR, Default "4")
-- `quota_memory` (VARCHAR, Default "16Gi")
-- `quota_gpu` (VARCHAR, Default "1")
-- `created_at` (TIMESTAMP, Default UTC Now)
-
-### Models Table (`models`)
-Represents models registered in the registry.
-- `id` (INTEGER, Primary Key, Auto-increment)
-- `name` (VARCHAR, Indexed, Not Null) - e.g., "sentiment-analysis"
-- `version` (VARCHAR, Not Null) - e.g., "v1"
-- `framework` (VARCHAR, Not Null) - e.g., "pytorch", "sklearn", "vllm"
-- `artifact_uri` (VARCHAR, Not Null) - e.g., "s3://registry-bucket/models/sentiment/1/"
-- `created_at` (TIMESTAMP, Default UTC Now)
-
-### Deployments Table (`deployments`)
-Represents active serving instances on the cluster.
-- `id` (INTEGER, Primary Key, Auto-increment)
-- `name` (VARCHAR, Indexed, Not Null) - Deployment name.
-- `workspace_id` (INTEGER, Foreign Key referencing `workspaces.id`, Not Null)
-- `model_id` (INTEGER, Foreign Key referencing `models.id`, Not Null)
-- `cpu` (VARCHAR, Default "1")
-- `memory` (VARCHAR, Default "2Gi")
-- `gpu` (VARCHAR, Default "0")
-- `replicas` (INTEGER, Default 1)
-- `status` (VARCHAR, Default "Deploying") - Options: `Deploying`, `Ready`, `Failed`
-- `endpoint_url` (VARCHAR, Nullable) - HTTP URL of the Knative predictor.
-- `created_at` (TIMESTAMP, Default UTC Now)
-
----
-
-## 3. Platform API Design
+The Platform API exposes REST endpoints for self-service operations.
 
 ### POST `/deploy-model`
-Deploys a new model or updates an existing one.
-- **Request Body (JSON)**:
-  ```json
-  {
-    "name": "sentiment-classifier-dev",
-    "workspace": "team-a",
-    "model_name": "sentiment-analysis",
-    "model_version": "1",
-    "framework": "pytorch",
-    "artifact_uri": "s3://k8s-ai-platform-model-registry-bucket/models/sentiment-analysis/1/",
-    "cpu": "1",
-    "memory": "2Gi",
-    "gpu": "0",
-    "replicas": 1
-  }
-  ```
-- **Response (JSON - Status 200)**:
-  ```json
-  {
-    "id": 1,
-    "name": "sentiment-classifier-dev",
-    "workspace": "team-a",
-    "model_name": "sentiment-analysis",
-    "model_version": "1",
-    "framework": "pytorch",
-    "cpu": "1",
-    "memory": "2Gi",
-    "gpu": "0",
-    "replicas": 1,
-    "status": "Ready",
-    "endpoint_url": "http://sentiment-classifier-dev.team-a.ai-platform.enterprise.internal",
-    "created_at": "2026-07-13T03:55:00.000Z"
-  }
-  ```
-
-### POST `/delete-model/{deployment_id}`
-Tears down model pods and deletes the KServe custom object.
-- **Response (JSON - Status 200)**:
-  ```json
-  {
-    "message": "Successfully deleted model deployment sentiment-classifier-dev"
-  }
-  ```
-
-### GET `/deployments`
-Retrieves status of all deployments on the cluster.
-- **Response (JSON - Status 200)**:
-  ```json
-  [
+-   **Method**: `POST`
+-   **Payload Schema (Pydantic)**:
+    ```json
     {
-      "id": 1,
-      "name": "sentiment-classifier-dev",
+      "name": "sentiment-analysis-v1",
       "workspace": "team-a",
       "model_name": "sentiment-analysis",
       "model_version": "1",
       "framework": "pytorch",
+      "artifact_uri": "s3://k8s-ai-platform-model-registry-bucket/models/sentiment-analysis/1/",
       "cpu": "1",
       "memory": "2Gi",
       "gpu": "0",
-      "replicas": 1,
-      "status": "Ready",
-      "endpoint_url": "http://sentiment-classifier-dev.team-a.ai-platform.enterprise.internal",
-      "created_at": "2026-07-13T03:55:00"
+      "replicas": 1
     }
-  ]
-  ```
+    ```
+-   **Logic**:
+    1. Validate Keycloak OIDC bearer token in request header.
+    2. Check if the workspace `team-a` exists and has remaining resource quota.
+    3. Query or register the model in the database.
+    4. Call Kubernetes CustomObject API to apply the KServe `InferenceService` CRD.
+    5. Write audit log entry and return deployment state metadata.
 
 ### GET `/deployments/{deployment_id}/logs`
-Streams the logs from the active inference pod.
-- **Response (JSON - Status 200)**:
-  ```json
-  {
-    "logs": "[INFO] Starting model serving engine...\n[INFO] Inference engine initialized successfully."
-  }
-  ```
+-   **Method**: `GET`
+-   **Logic**:
+    1. Query deployment database record to find workspace name and pod selectors.
+    2. Invoke Kubernetes CoreV1 API to retrieve logs from pod matching label: `serving.kserve.io/inferenceservice=<name>`.
+    3. Return plain text log stream or JSON payload.
+
+---
+
+## 3. Kubernetes Resource Specifications
+
+### KServe InferenceService CRD Manifest Shape
+```yaml
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: sentiment-clf
+  namespace: team-a
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: pytorch
+      storageUri: s3://k8s-ai-platform-model-registry-bucket/models/sentiment-analysis/1/
+      resources:
+        limits:
+          cpu: "1"
+          memory: 2Gi
+        requests:
+          cpu: "500m"
+          memory: 1Gi
+```
+
+### Team Isolation NetworkPolicy Shape
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: team-isolation-policy
+  namespace: team-a
+spec:
+  podSelector: {} # Default-deny all pods inside namespace
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {} # Whitelist intra-namespace pods
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ml-platform # Whitelist Platform API commands
+```
+
+---
+
+## 4. Terraform Module Configurations
+
+-   **Root Module**: Calls the VPC, IAM, and EKS sub-modules, provisioning the S3 bucket.
+-   **VPC Module**: Deploys public and private subnets across 3 Availability Zones. Annotates public subnets with `kubernetes.io/role/elb=1` and private subnets with `kubernetes.io/role/internal-elb=1`.
+-   **EKS Module**: provisions control plane endpoints. Configures CPU node groups (using `t3.xlarge` instances) and GPU node groups (using `g4dn.xlarge` instances with `nvidia.com/gpu=true:NoSchedule` taints).
+-   **IAM Module**: Sets up trust policies using the EKS OpenID Connect provider to enable IRSA for S3 access.
+
+---
+
+## 5. GitOps & CI/CD Design
+
+### ArgoCD App-of-Apps structure
+The root application at `argocd/root-application.yaml` points to the `argocd/apps` directory, which contains application declarations:
+-   `mlflow.yaml`: Configures the MLflow deployment inside namespace `ml-platform`.
+-   `minio.yaml`: Configures MinIO StatefulSets and services inside `ml-platform`.
+-   `kserve.yaml`: Sets up KServe serving controllers inside `kserve` namespace.
+-   `monitoring.yaml`: deploys Prometheus, Grafana dashboards, and Loki logs pipelines.
+
+### CI/CD stages (GitHub Actions)
+1.  **Code Check**: Verifies python syntax using `ruff` and executes testing suites using `pytest`.
+2.  **Container Compilation**: Compiles the FastAPI backend Docker image and pushes it to Amazon ECR.
+3.  **GitOps manifest updates**: Patches the deployment tag in [k8s-deployment.yaml](file:///d:/Ai infra & ai plateform/Kubernetes AI Infrastructure Platform/fastapi-platform-api/k8s-deployment.yaml) and pushes it to GitHub, triggering ArgoCD synchronization.

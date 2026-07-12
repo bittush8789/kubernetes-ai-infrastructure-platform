@@ -1,81 +1,102 @@
-# Platform Operations Runbook
+# Platform Operational Runbook & DR Procedures
 
-This runbook guides operators through common administrative tasks for the AI Infrastructure.
-
----
-
-## 1. Onboarding a New Workspace (Team Namespace)
-
-To onboard a new tenant (e.g. `team-d`):
-
-1.  **Create Namespace and labels**:
-    Add the team block to `kubernetes/namespaces/namespaces.yaml` or run:
-    ```bash
-    kubectl create namespace team-d
-    kubectl label namespace team-d tenant=team-d istio-injection=enabled
-    ```
-2.  **Apply Resource Quotas**:
-    Restrict maximum memory and CPU consumption to prevent cluster resource starvation:
-    ```bash
-    kubectl apply -f - <<EOF
-    apiVersion: v1
-    kind: ResourceQuota
-    metadata:
-      name: team-d-quota
-      namespace: team-d
-    spec:
-      hard:
-        requests.cpu: "4"
-        requests.memory: 8Gi
-        limits.cpu: "8"
-        limits.memory: 16Gi
-        requests.nvidia.com/gpu: "1"
-    EOF
-    ```
-3.  **Apply Team isolation NetworkPolicy**:
-    Apply the default-deny and whitelist rules:
-    ```bash
-    kubectl apply -f kubernetes/network-policies/team-isolation.yaml
-    ```
+This runbook describes recovery procedures for platform failures.
 
 ---
 
-## 2. Port-Forwarding to Internal Services
+## 1. Recovery Procedure: Pod Failures (`CrashLoopBackOff` / `Pending`)
 
-For security, dashboard consoles are not exposed to the public internet. Use these port-forward commands to access them locally:
-
--   **Grafana Dashboards**:
-    ```bash
-    kubectl port-forward svc/prometheus-grafana -n monitoring 3000:80
-    # Access at http://localhost:3000 (Retrieve password from secret)
-    ```
--   **MLflow Tracking Console**:
-    ```bash
-    kubectl port-forward svc/mlflow-service -n ml-platform 5000:5000
-    # Access at http://localhost:5000
-    ```
--   **MinIO Console (S3 Browser)**:
-    ```bash
-    kubectl port-forward svc/minio-service -n ml-platform 9001:9001
-    # Access at http://localhost:9001
-    ```
+*   **Symptoms**: A core pod or model deployment container continuously crashes, showing `CrashLoopBackOff` status.
+*   **Resolution Steps**:
+    1.  **Retrieve Pod description**: Check constraints, volume attachments, or event logs:
+        ```bash
+        kubectl describe pod <POD_NAME> -n <NAMESPACE>
+        ```
+    2.  **Inspect container logs**: Look at stderr outputs:
+        ```bash
+        kubectl logs <POD_NAME> -n <NAMESPACE> --tail=100
+        ```
+    3.  **Check for OOM (Out of Memory) kills**:
+        If events show `OOMKilled`, increase the memory limits inside the deployment manifest or re-submit the deployment with higher requests.
 
 ---
 
-## 3. Scaling EKS Node Pools
+## 2. Recovery Procedure: EKS Node Failures
 
-If GPU queues grow or CPU limits are hit:
+*   **Symptoms**: Nodes transition to `NotReady` status, causing pods to get stuck in `Terminating` or rescheduled states.
+*   **Resolution Steps**:
+    1.  **Evacuate Node**: Drain workloads from the degraded node:
+        ```bash
+        kubectl drain <NODE_NAME> --ignore-daemonsets --delete-emptydir-data --force
+        ```
+    2.  **Terminate Instance**: Terminate the corresponding EC2 instance. The AWS Auto Scaling Group (ASG) will spin up a healthy node replacement automatically.
+    3.  **Monitor New Node Lifecycle**:
+        ```bash
+        kubectl get nodes -w
+        ```
 
-1.  **Scale CPU Node Pool**:
-    Modify the EKS node scale settings:
-    ```bash
-    aws eks update-nodegroup-config \
-      --cluster-name ai-platform-cluster \
-      --nodegroup-name ai-platform-cluster-cpu-nodegroup \
-      --scaling-config minSize=2,maxSize=10,desiredSize=5 \
-      --region us-west-2
-    ```
-2.  **Verify New Nodes Joining**:
-    ```bash
-    kubectl get nodes -w
-    ```
+---
+
+## 3. Recovery Procedure: KServe Controller Failure
+
+*   **Symptoms**: Inference service creation hangs; `kubectl get inferenceservices` shows reconciliation state as `Unknown` or empty.
+*   **Resolution Steps**:
+    1.  **Check KServe controller pods status**:
+        ```bash
+        kubectl get pods -n kserve
+        ```
+    2.  **Restart the KServe controller manager**:
+        ```bash
+        kubectl rollout restart deployment/kserve-controller-manager -n kserve
+        ```
+    3.  **Inspect Knative serving gateway**:
+        Verify Istio/Knative sidecars are not experiencing certificate mismatch issues. Check cert-manager logs.
+
+---
+
+## 4. Recovery Procedure: MLflow Connection / UI Failures
+
+*   **Symptoms**: The MLflow Web UI page times out; code fails to upload experiment metadata or log artifact models.
+*   **Resolution Steps**:
+    1.  **Check MinIO availability**: Verify MinIO object store is responsive:
+        ```bash
+        kubectl get pods -n ml-platform -l app=minio
+        ```
+    2.  **Verify PostgreSQL connectivity**:
+        Run a ping command inside the MLflow pod to ensure PostgreSQL port 5432 is accessible:
+        ```bash
+        kubectl exec -it deployment/mlflow-deployment -n ml-platform -- nc -zv postgres-service 5432
+        ```
+    3.  **Restart MLflow deployment**:
+        ```bash
+        kubectl rollout restart deployment/mlflow-deployment -n ml-platform
+        ```
+
+---
+
+## 5. Recovery Procedure: ArgoCD Sync Loops
+
+*   **Symptoms**: ArgoCD application gets stuck in an infinite `Reconciling` loop, continuously changing resources back and forth.
+*   **Resolution Steps**:
+    1.  **Identify drifting manifests**: Check the ArgoCD UI diff page to find the conflicting resource attribute.
+    2.  **Disable Auto-Heal temporarily** to freeze updates:
+        ```bash
+        kubectl patch app <APP_NAME> -n argocd --type merge -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":false}}}}'
+        ```
+    3.  **Resolve definition conflicts**: Align the Git source manifests with the Kubernetes controller overrides (like mutating Webhook changes).
+
+---
+
+## 6. Recovery Procedure: Database Connection Outages
+
+*   **Symptoms**: Platform API backend returns `500 Database Connection Error` for all endpoints.
+*   **Resolution Steps**:
+    1.  **Check PostgreSQL Pod status**:
+        ```bash
+        kubectl get pods -n ml-platform -l app=postgres
+        ```
+    2.  **Verify PV/PVC storage space**: Check if the database storage volume is full:
+        ```bash
+        kubectl get pvc -n ml-platform
+        ```
+    3.  **Recover from corruption (if needed)**: Restore from the latest snapshot using [docs/OPERATIONS.md](file:///d:/Ai%20infra%20&%20ai%20plateform/Kubernetes%20AI%20Infrastructure%20Platform/docs/OPERATIONS.md#restore-procedure) guidelines.
