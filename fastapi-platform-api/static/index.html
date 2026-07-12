@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise AI Platform Control Portal</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Plus+Jakarta+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- Chart.js for stunning live metrics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #080c14;
+            --card-bg: rgba(17, 24, 39, 0.6);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --accent-primary: #6366f1; /* Indigo */
+            --accent-primary-glow: rgba(99, 102, 241, 0.35);
+            --accent-secondary: #a855f7; /* Purple */
+            --success: #10b981; /* Emerald */
+            --success-glow: rgba(16, 185, 129, 0.25);
+            --warning: #f59e0b; /* Amber */
+            --danger: #ef4444; /* Rose */
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 10% 20%, rgba(99, 102, 241, 0.08) 0px, transparent 50%),
+                radial-gradient(at 90% 80%, rgba(168, 85, 247, 0.08) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 40px;
+            background: rgba(8, 12, 20, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--card-border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            color: #fff;
+            box-shadow: 0 0 15px var(--accent-primary-glow);
+        }
+
+        .logo-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            background: linear-gradient(to right, #fff, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-actions {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: #fff;
+            box-shadow: 0 4px 15px var(--accent-primary-glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            color: var(--text-main);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .main-container {
+            flex: 1;
+            padding: 30px 40px;
+            max-width: 1600px;
+            width: 100%;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 30px;
+        }
+
+        @media (max-width: 1200px) {
+            .main-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .glass-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 30px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .glass-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            font-family: 'Outfit', sans-serif;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 12px;
+        }
+
+        .workspace-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-muted);
+        }
+
+        .tab.active {
+            background: var(--accent-primary);
+            color: #fff;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 10px var(--accent-primary-glow);
+        }
+
+        /* Metrics Row */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 768px) {
+            .metrics-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .metric-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 24px;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            color: #fff;
+            margin-top: 6px;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Deployments Table */
+        .deployments-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        .deployments-table th {
+            padding: 12px 16px;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 500;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .deployments-table td {
+            padding: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            font-size: 14px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-ready {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .status-deploying {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }
+
+        .status-failed {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: currentColor;
+            display: inline-block;
+        }
+
+        .pulse {
+            animation: pulse-animation 1.5s infinite;
+        }
+
+        @keyframes pulse-animation {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+        }
+
+        /* Sidebar console */
+        .console-container {
+            background: #05070c;
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 16px;
+            height: 350px;
+            overflow-y: auto;
+            font-size: 12px;
+            color: #38bdf8;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8);
+        }
+
+        .console-line {
+            margin-bottom: 6px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+        }
+
+        .console-timestamp {
+            color: var(--text-muted);
+            margin-right: 8px;
+        }
+
+        /* Modal styling */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 7, 12, 0.8);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: #0f172a;
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            max-width: 600px;
+            width: 90%;
+            padding: 30px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            position: relative;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .form-control {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: #fff;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 10px var(--accent-primary-glow);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 16px;
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo-section">
+            <div class="logo-icon">K8s</div>
+            <div class="logo-title">Kubernetes AI Portal</div>
+        </div>
+        <div class="nav-actions">
+            <button class="btn btn-secondary" onclick="window.open('/docs')">API Swagger Docs</button>
+            <button class="btn btn-primary" onclick="openModal()">+ Deploy Model</button>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Main Area -->
+        <main>
+            <!-- System Telemetry metrics -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Avg Inference Latency</div>
+                    <div class="metric-value" id="metric-latency">-- ms</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Request Concurrency (QPS)</div>
+                    <div class="metric-value" id="metric-qps">--</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Cluster Memory Load</div>
+                    <div class="metric-value" id="metric-memory">--%</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Active GPU Allocations</div>
+                    <div class="metric-value" id="metric-gpu">--</div>
+                </div>
+            </div>
+
+            <!-- Chart -->
+            <div class="glass-card">
+                <div class="card-title">Live Platform Telemetry (Inference Latency vs Throughput)</div>
+                <div style="height: 300px; position: relative;">
+                    <canvas id="liveTelemetryChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Deployments Table -->
+            <div class="glass-card">
+                <div class="card-title">
+                    Active Deployments
+                    <div class="workspace-tabs" id="workspace-tabs">
+                        <button class="tab active" onclick="filterWorkspace('all')">All Workspaces</button>
+                        <button class="tab" onclick="filterWorkspace('team-a')">team-a</button>
+                        <button class="tab" onclick="filterWorkspace('team-b')">team-b</button>
+                        <button class="tab" onclick="filterWorkspace('team-c')">team-c</button>
+                    </div>
+                </div>
+                <table class="deployments-table">
+                    <thead>
+                        <tr>
+                            <th>Deployment Name</th>
+                            <th>Workspace</th>
+                            <th>Model / Version</th>
+                            <th>Framework</th>
+                            <th>Resource (CPU/RAM/GPU)</th>
+                            <th>Status</th>
+                            <th>Endpoint URL</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="deployments-body">
+                        <tr>
+                            <td colspan="8" style="text-align: center; color: var(--text-muted);">Fetching active inference workloads...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </main>
+
+        <!-- Sidebar (Logs console & info) -->
+        <aside>
+            <div class="glass-card" style="height: 100%; display: flex; flex-direction: column;">
+                <div class="card-title" id="console-title">Model Live Logs (Mock)</div>
+                <div class="console-container" id="logs-console">
+                    <div class="console-line"><span class="console-timestamp">[03:52:10]</span>[SYSTEM] Live monitoring connection established.</div>
+                    <div class="console-line"><span class="console-timestamp">[03:52:11]</span>[SYSTEM] Awaiting log stream from model deployment pods. Click "View Logs" on an active deployment to attach terminal.</div>
+                </div>
+                <button class="btn btn-secondary" style="margin-top: 15px; width: 100%; justify-content: center;" onclick="clearLogs()">Clear Terminal</button>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Modal for deploying model -->
+    <div class="modal" id="deploy-modal">
+        <div class="modal-content">
+            <button class="close-btn" onclick="closeModal()">&times;</button>
+            <h2 class="card-title" style="margin-bottom: 24px; border: none; font-size: 22px;">Deploy Model Instance</h2>
+            <form id="deploy-form" onsubmit="submitDeployment(event)">
+                <div class="form-group">
+                    <label class="form-label" for="dep-name">Deployment Name</label>
+                    <input class="form-control" type="text" id="dep-name" placeholder="e.g. sentiment-clf" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="dep-workspace">Workspace Namespace</label>
+                    <select class="form-control" id="dep-workspace" required>
+                        <option value="team-a">team-a</option>
+                        <option value="team-b">team-b</option>
+                        <option value="team-c">team-c</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="model-name">Model Type / Name</label>
+                    <input class="form-control" type="text" id="model-name" placeholder="e.g. sentiment-analysis" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="model-version">Model Version</label>
+                        <input class="form-control" type="text" id="model-version" placeholder="e.g. 1" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="model-framework">Framework</label>
+                        <select class="form-control" id="model-framework" required>
+                            <option value="pytorch">PyTorch</option>
+                            <option value="sklearn">Scikit-Learn</option>
+                            <option value="vllm">vLLM (LLM Serving)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="dep-replicas">Replicas</label>
+                        <input class="form-control" type="number" id="dep-replicas" value="1" min="1" max="10" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="artifact-uri">Storage URI (S3/MinIO)</label>
+                    <input class="form-control" type="text" id="artifact-uri" placeholder="e.g. s3://k8s-ai-platform-model-registry-bucket/models/..." required>
+                </div>
+                <div class="form-row" style="margin-bottom: 24px;">
+                    <div class="form-group">
+                        <label class="form-label" for="req-cpu">CPU Requests</label>
+                        <select class="form-control" id="req-cpu">
+                            <option value="500m">0.5 Core</option>
+                            <option value="1" selected>1 Core</option>
+                            <option value="2">2 Cores</option>
+                            <option value="4">4 Cores</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="req-mem">Memory Requests</label>
+                        <select class="form-control" id="req-mem">
+                            <option value="512Mi">512 MiB</option>
+                            <option value="1Gi">1 GiB</option>
+                            <option value="2Gi" selected>2 GiB</option>
+                            <option value="4Gi">4 GiB</option>
+                            <option value="8Gi">8 GiB</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="req-gpu">GPU Allocation</label>
+                        <select class="form-control" id="req-gpu">
+                            <option value="0" selected>None</option>
+                            <option value="1">1 GPU</option>
+                            <option value="2">2 GPUs</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 16px; justify-content: flex-end;">
+                    <button class="btn btn-secondary" type="button" onclick="closeModal()">Cancel</button>
+                    <button class="btn btn-primary" type="submit">Submit Deployment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let deployments = [];
+        let activeFilter = 'all';
+
+        // Load telemetry chart
+        const ctx = document.getElementById('liveTelemetryChart').getContext('2d');
+        const telemetryChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Average Latency (ms)',
+                        data: [],
+                        borderColor: '#a855f7',
+                        backgroundColor: 'rgba(168, 85, 247, 0.05)',
+                        tension: 0.4,
+                        borderWidth: 2,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Throughput (QPS)',
+                        data: [],
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99, 102, 241, 0.05)',
+                        tension: 0.4,
+                        borderWidth: 2,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.03)' },
+                        ticks: { color: '#9ca3af' }
+                    },
+                    y: {
+                        position: 'left',
+                        grid: { color: 'rgba(255,255,255,0.03)' },
+                        ticks: { color: '#9ca3af' },
+                        title: { display: true, text: 'Latency (ms)', color: '#9ca3af' }
+                    },
+                    y1: {
+                        position: 'right',
+                        grid: { drawOnChartArea: false },
+                        ticks: { color: '#9ca3af' },
+                        title: { display: true, text: 'Throughput (QPS)', color: '#9ca3af' }
+                    }
+                },
+                plugins: {
+                    legend: { labels: { color: '#f3f4f6' } }
+                }
+            }
+        });
+
+        // Open/Close modal
+        function openModal() {
+            document.getElementById('deploy-modal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('deploy-modal').style.display = 'none';
+        }
+
+        // Fetch telemetry & update UI
+        async function fetchTelemetry() {
+            try {
+                const res = await fetch('/metrics');
+                const data = await res.json();
+                
+                document.getElementById('metric-latency').innerText = `${data.average_inference_latency_ms.toFixed(1)} ms`;
+                document.getElementById('metric-qps').innerText = data.qps.toFixed(1);
+                document.getElementById('metric-memory').innerText = `${data.cluster_memory_usage.toFixed(1)}%`;
+                document.getElementById('metric-gpu').innerText = `${data.active_gpus}/${data.total_gpus}`;
+
+                // Update charts
+                const timeLabel = new Date().toLocaleTimeString();
+                telemetryChart.data.labels.push(timeLabel);
+                telemetryChart.data.datasets[0].data.push(data.average_inference_latency_ms);
+                telemetryChart.data.datasets[1].data.push(data.qps);
+
+                if (telemetryChart.data.labels.length > 10) {
+                    telemetryChart.data.labels.shift();
+                    telemetryChart.data.datasets[0].data.shift();
+                    telemetryChart.data.datasets[1].data.shift();
+                }
+                telemetryChart.update();
+            } catch(e) {
+                console.error("Telemetry error", e);
+            }
+        }
+
+        // Fetch active deployments
+        async function fetchDeployments() {
+            try {
+                const res = await fetch('/deployments');
+                deployments = await res.json();
+                renderDeployments();
+            } catch(e) {
+                console.error("Error loading deployments", e);
+            }
+        }
+
+        function renderDeployments() {
+            const tbody = document.getElementById('deployments-body');
+            tbody.innerHTML = '';
+            
+            const filtered = activeFilter === 'all' 
+                ? deployments 
+                : deployments.filter(d => d.workspace === activeFilter);
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No deployments found for this workspace.</td></tr>`;
+                return;
+            }
+
+            filtered.forEach(d => {
+                const tr = document.createElement('tr');
+                
+                let statusClass = 'status-deploying';
+                if (d.status.toLowerCase() === 'ready') statusClass = 'status-ready';
+                if (d.status.toLowerCase() === 'failed') statusClass = 'status-failed';
+
+                let resourceStr = `${d.cpu} CPU / ${d.memory}`;
+                if (d.gpu && parseInt(d.gpu) > 0) resourceStr += ` / ${d.gpu} GPU`;
+
+                tr.innerHTML = `
+                    <td style="font-weight:600; color:#fff;">${d.name}</td>
+                    <td><span style="color:var(--accent-secondary);font-weight:600;">${d.workspace}</span></td>
+                    <td>${d.model_name} <span style="font-size:11px;color:var(--text-muted);">(v${d.model_version})</span></td>
+                    <td style="text-transform:uppercase; font-size:12px; font-weight:600;">${d.framework}</td>
+                    <td>${resourceStr}</td>
+                    <td>
+                        <span class="status-badge ${statusClass}">
+                            <span class="status-dot ${d.status.toLowerCase() === 'deploying' ? 'pulse' : ''}"></span>
+                            ${d.status}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="${d.endpoint_url || '#'}" target="_blank" style="color:var(--accent-primary);text-decoration:none;font-family:monospace;font-size:12px;">
+                            ${d.endpoint_url ? d.endpoint_url.substring(7, 30) + '...' : 'Reconciliation Pending'}
+                        </a>
+                    </td>
+                    <td style="display:flex; gap:10px;">
+                        <button class="btn btn-secondary" style="padding:6px 12px; font-size:12px;" onclick="viewLogs(${d.id}, '${d.name}')">Logs</button>
+                        <button class="btn btn-secondary" style="padding:6px 12px; font-size:12px; border-color:rgba(239, 68, 68, 0.4); color:var(--danger);" onclick="deleteDeployment(${d.id})">Terminate</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function filterWorkspace(wsName) {
+            activeFilter = wsName;
+            
+            // Adjust active tab classes
+            const tabs = document.querySelectorAll('#workspace-tabs .tab');
+            tabs.forEach(t => {
+                if (t.innerText.toLowerCase().includes(wsName)) {
+                    t.classList.add('active');
+                } else {
+                    t.classList.remove('active');
+                }
+            });
+
+            renderDeployments();
+        }
+
+        // View model logs
+        async function viewLogs(id, name) {
+            document.getElementById('console-title').innerText = `Live Logs: ${name}`;
+            const consoleEl = document.getElementById('logs-console');
+            consoleEl.innerHTML = `<div class="console-line"><span class="console-timestamp">[${new Date().toLocaleTimeString()}]</span>Connecting to pod logs reader...</div>`;
+            
+            try {
+                const res = await fetch(`/deployments/${id}/logs`);
+                const data = await res.json();
+                
+                consoleEl.innerHTML = '';
+                const lines = data.logs.split('\n');
+                lines.forEach(line => {
+                    if (!line.trim()) return;
+                    const logLine = document.createElement('div');
+                    logLine.className = 'console-line';
+                    logLine.innerHTML = `<span class="console-timestamp">[${new Date().toLocaleTimeString()}]</span>${line}`;
+                    consoleEl.appendChild(logLine);
+                });
+                consoleEl.scrollTop = consoleEl.scrollHeight;
+            } catch(e) {
+                consoleEl.innerHTML += `<div class="console-line" style="color:var(--danger)">Error: Failed to fetch container logs.</div>`;
+            }
+        }
+
+        // Delete deployment
+        async function deleteDeployment(id) {
+            if(!confirm("Are you sure you want to terminate this model deployment?")) return;
+            try {
+                const res = await fetch(`/delete-model/${id}`, { method: 'POST' });
+                const data = await res.json();
+                appendConsoleLog(`[SYSTEM] ${data.message}`);
+                fetchDeployments();
+            } catch(e) {
+                console.error(e);
+                appendConsoleLog(`[ERROR] Failed to terminate deployment.`);
+            }
+        }
+
+        // Submit deployment
+        async function submitDeployment(e) {
+            e.preventDefault();
+            
+            const payload = {
+                name: document.getElementById('dep-name').value,
+                workspace: document.getElementById('dep-workspace').value,
+                model_name: document.getElementById('model-name').value,
+                model_version: document.getElementById('model-version').value,
+                framework: document.getElementById('model-framework').value,
+                artifact_uri: document.getElementById('artifact-uri').value,
+                cpu: document.getElementById('req-cpu').value,
+                memory: document.getElementById('req-mem').value,
+                gpu: document.getElementById('req-gpu').value,
+                replicas: parseInt(document.getElementById('dep-replicas').value)
+            };
+
+            closeModal();
+            appendConsoleLog(`[SYSTEM] Initializing deployment for model ${payload.model_name}...`);
+
+            try {
+                const res = await fetch('/deploy-model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    appendConsoleLog(`[SUCCESS] KServe deployment scheduled: ${data.name} in workspace ${data.workspace}`);
+                    fetchDeployments();
+                } else {
+                    const error = await res.json();
+                    appendConsoleLog(`[ERROR] Deployment failed: ${error.detail}`);
+                }
+            } catch(e) {
+                console.error(e);
+                appendConsoleLog(`[ERROR] Network error during deployment scheduling.`);
+            }
+        }
+
+        function appendConsoleLog(text) {
+            const consoleEl = document.getElementById('logs-console');
+            const logLine = document.createElement('div');
+            logLine.className = 'console-line';
+            logLine.innerHTML = `<span class="console-timestamp">[${new Date().toLocaleTimeString()}]</span>${text}`;
+            consoleEl.appendChild(logLine);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('logs-console').innerHTML = '';
+        }
+
+        // Initialize and Poll
+        fetchTelemetry();
+        fetchDeployments();
+        setInterval(fetchTelemetry, 3000);
+        setInterval(fetchDeployments, 8000);
+    </script>
+</body>
+</html>

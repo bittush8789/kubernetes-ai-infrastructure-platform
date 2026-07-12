@@ -1,0 +1,36 @@
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector:
+      matchLabels:
+        release: prometheus-stack
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector:
+      matchLabels:
+        release: prometheus-stack
+    additionalScrapeConfigs:
+      - job_name: 'kserve-inference-services'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_serving_kserve_io_inferenceservice]
+            action: keep
+            regex: .*
+          - source_labels: [__address__, __meta_kubernetes_pod_container_port_number]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:9080 # KServe metrics endpoint
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_label_serving_kserve_io_inferenceservice]
+            target_label: inferenceservice
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+      - job_name: 'fastapi-platform-api'
+        kubernetes_sd_configs:
+          - role: service
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_label_app]
+            action: keep
+            regex: platform-api
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace

@@ -1,0 +1,71 @@
+# RBAC ClusterRole for ML Engineers (scoped to team namespaces)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ml-engineer-role
+rules:
+  - apiGroups: ["", "apps", "batch", "autoscaling"]
+    resources: ["deployments", "services", "pods", "pods/log", "jobs", "cronjobs", "horizontalpodautoscalers", "configmaps", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["serving.kserve.io"]
+    resources: ["inferenceservices"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors", "podmonitors"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+# Example RoleBinding: Binding user to ml-engineer-role in team-a namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: team-a-ml-engineer-binding
+  namespace: team-a
+subjects:
+  - kind: User
+    name: alice@enterprise.com
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: ml-engineer-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ClusterRole for the FastAPI Platform API Service Account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-api-clusterrole
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["", "apps", "batch", "autoscaling", "networking.k8s.io"]
+    resources: ["deployments", "services", "ingresses", "pods", "pods/log", "configmaps", "secrets", "horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["serving.kserve.io"]
+    resources: ["inferenceservices"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+# Service Account for the Platform API
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-api-sa
+  namespace: ml-platform
+
+---
+# Bind Platform API Service Account to the ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-api-binding
+subjects:
+  - kind: ServiceAccount
+    name: platform-api-sa
+    namespace: ml-platform
+roleRef:
+  kind: ClusterRole
+  name: platform-api-clusterrole
+  apiGroup: rbac.authorization.k8s.io

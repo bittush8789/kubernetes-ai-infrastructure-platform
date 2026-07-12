@@ -1,0 +1,20 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: sentiment-analysis
+  namespace: team-a
+  annotations:
+    serving.kserve.io/deploymentMode: Serverless
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: pytorch
+      storageUri: s3://k8s-ai-platform-model-registry-bucket/models/sentiment-analysis/1/
+      resources:
+        limits:
+          cpu: "2"
+          memory: 4Gi
+        requests:
+          cpu: "1"
+          memory: 2Gi

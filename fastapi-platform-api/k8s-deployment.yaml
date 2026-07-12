@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-api-deployment
+  namespace: ml-platform
+  labels:
+    app: platform-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: platform-api
+  template:
+    metadata:
+      labels:
+        app: platform-api
+    spec:
+      serviceAccountName: platform-api-sa
+      containers:
+        - name: platform-api
+          image: 123456789012.dkr.ecr.us-west-2.amazonaws.com/ai-platform-api:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://postgres_user:postgres_pass@postgres-service:5432/platform_db"
+            - name: MOCK_K8S
+              value: "false" # Uses EKS API directly in production
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi
+            requests:
+              cpu: "250m"
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-api-service
+  namespace: ml-platform
+  labels:
+    app: platform-api
+spec:
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+  selector:
+    app: platform-api
+  type: ClusterIP
+
+---
+# PostgreSQL Database Deployment for Platform Persistence
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-deployment
+  namespace: ml-platform
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+              name: db
+          env:
+            - name: POSTGRES_DB
+              value: "platform_db"
+            - name: POSTGRES_USER
+              value: "postgres_user"
+            - name: POSTGRES_PASSWORD
+              value: "postgres_pass"
+          volumeMounts:
+            - name: db-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi
+            requests:
+              cpu: "250m"
+              memory: 512Mi
+      volumes:
+        - name: db-data
+          emptyDir: {} # Switch to PersistentVolumeClaim in production
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: ml-platform
+  labels:
+    app: postgres
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: db
+  selector:
+    app: postgres
+  type: ClusterIP

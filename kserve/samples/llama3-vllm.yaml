@@ -1,0 +1,43 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: llama-3-8b-instruct
+  namespace: team-c
+spec:
+  predictor:
+    containers:
+      - name: vllm-container
+        image: vllm/vllm-openai:v0.2.6
+        args:
+          - --model
+          - meta-llama/Meta-Llama-3-8B-Instruct
+          - --port
+          - "8080"
+          - --trust-remote-code
+          - --max-model-len
+          - "4096"
+        ports:
+          - containerPort: 8080
+            protocol: TCP
+        env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: huggingface-secret
+                key: token
+        resources:
+          limits:
+            cpu: "8"
+            memory: 32Gi
+            nvidia.com/gpu: "1"
+          requests:
+            cpu: "4"
+            memory: 16Gi
+            nvidia.com/gpu: "1"
+        tolerations:
+          - key: "nvidia.com/gpu"
+            operator: "Equal"
+            value: "true"
+            effect: "NoSchedule"
+        nodeSelector:
+          workload-type: gpu

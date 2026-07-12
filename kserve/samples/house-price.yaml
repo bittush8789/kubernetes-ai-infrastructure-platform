@@ -1,0 +1,20 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: house-price-predictor
+  namespace: team-b
+  annotations:
+    serving.kserve.io/deploymentMode: Serverless
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: sklearn
+      storageUri: s3://k8s-ai-platform-model-registry-bucket/models/house-price-predictor/3/
+      resources:
+        limits:
+          cpu: "1"
+          memory: 1Gi
+        requests:
+          cpu: "250m"
+          memory: 512Mi
